@@ -1,10 +1,19 @@
 from flask import Flask, request, jsonify
-import urllib.request
-import json
+import os
 import webbrowser
 import threading
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 app = Flask(__name__)
+
+# Groq client
+client = OpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
+)
 
 HTML = r'''
 <!DOCTYPE html>
@@ -160,7 +169,6 @@ textarea{
 
 </div>
 
-
 <div class="history" id="history">
 
     <h3>Chat History</h3>
@@ -169,9 +177,7 @@ textarea{
 
 </div>
 
-
 <div class="chat" id="chat"></div>
-
 
 <div class="bottom">
 
@@ -189,12 +195,10 @@ textarea{
 
 </div>
 
-
 <script>
 
 let currentChat = [];
 let chats = JSON.parse(localStorage.getItem("myChats") || "[]");
-
 
 function add(text,type){
 
@@ -209,7 +213,6 @@ function add(text,type){
     d.scrollIntoView();
 
 }
-
 
 function send(){
 
@@ -266,12 +269,11 @@ function send(){
         let bots = document.querySelectorAll(".bot");
 
         bots[bots.length-1].textContent =
-        "Ollama connection error.";
+        "Connection error. Please try again.";
 
     });
 
 }
-
 
 function key(e){
 
@@ -285,19 +287,19 @@ function key(e){
 
 }
 
-
 function newChat(){
 
     saveCurrentChat();
 
     currentChat = [];
 
+    window.currentChatId = null;
+
     document.getElementById("chat").innerHTML = "";
 
     document.getElementById("msg").focus();
 
 }
-
 
 function clearChat(){
 
@@ -306,7 +308,6 @@ function clearChat(){
     document.getElementById("chat").innerHTML = "";
 
 }
-
 
 function saveCurrentChat(){
 
@@ -355,7 +356,6 @@ function saveCurrentChat(){
 
 }
 
-
 function loadHistory(){
 
     let list = document.getElementById("historyList");
@@ -382,7 +382,6 @@ function loadHistory(){
 
 }
 
-
 function openChat(id){
 
     let selected = chats.find(x => x.id === id);
@@ -406,7 +405,6 @@ function openChat(id){
 
 }
 
-
 function toggleHistory(){
 
     let panel = document.getElementById("history");
@@ -424,7 +422,6 @@ function toggleHistory(){
     }
 
 }
-
 
 loadHistory();
 
@@ -447,37 +444,34 @@ def chat():
 
     message = data["message"]
 
-    ollama_data = {
-        "model": "llama3.2",
-        "prompt": message,
-        "stream": False
-    }
-
-    req = urllib.request.Request(
-        "http://localhost:11434/api/generate",
-        data=json.dumps(ollama_data).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json"
-        }
-    )
-
     try:
 
-        with urllib.request.urlopen(req) as response:
+        response = client.chat.completions.create(
 
-            result = json.loads(
-                response.read().decode("utf-8")
-            )
+            model="openai/gpt-oss-120b",
+
+            messages=[
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ]
+
+        )
+
+        reply = response.choices[0].message.content
 
         return jsonify({
-            "response": result["response"]
+            "response": reply
         })
 
-    except Exception:
+    except Exception as e:
+
+        print("Groq Error:", e)
 
         return jsonify({
             "response":
-            "Ollama connect nahi ho raha. Ollama check karo."
+            "Groq se connection nahi ho raha. Please try again."
         })
 
 
@@ -496,6 +490,6 @@ if __name__ == "__main__":
     ).start()
 
     app.run(
-        host="127.0.0.1",
-        port=5000
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 5000))
     )
